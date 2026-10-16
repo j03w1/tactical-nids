@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tactical NIDS — Browser Telemetry & Detection Engine</title>
+    <style>
+        :root {
+            --bg-dark: #0a0e17;
+            --surface: #111827;
+            --surface-border: #1f2937;
+            --accent: #2563eb;
+            --accent-glow: #3b82f6;
+            --text-main: #f3f4f6;
+            --text-muted: #9ca3af;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+            --success: #10b981;
+            --font-mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            line-height: 1.5;
+            padding: 24px;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--surface-border);
+            margin-bottom: 24px;
+        }
+
+        .title-group h1 { font-size: 1.5rem; letter-spacing: -0.02em; display: flex; align-items: center; gap: 8px; }
+        .badge {
+            background: rgba(37, 99, 235, 0.2);
+            color: var(--accent-glow);
+            border: 1px solid var(--accent);
+            font-size: 0.75rem;
+            padding: 2px 8px;
+            border-radius: 9999px;
+            font-family: var(--font-mono);
+        }
+
+        .controls { display: flex; gap: 12px; }
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            font-size: 0.875rem;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        button:hover { background: var(--accent-glow); }
+        button.secondary { background: var(--surface); border: 1px solid var(--surface-border); }
+        button.secondary:hover { background: #1e293b; }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .metric-card {
+            background: var(--surface);
+            border: 1px solid var(--surface-border);
+            border-radius: 8px;
+            padding: 16px;
+        }
+        .metric-label { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+        .metric-value { font-size: 1.75rem; font-weight: 700; font-family: var(--font-mono); margin-top: 4px; }
+
+        .panels-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 20px;
+        }
+
+        .panel {
+            background: var(--surface);
+            border: 1px solid var(--surface-border);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            height: 540px;
+        }
+        .panel-header {
+            padding: 14px 18px;
+            border-bottom: 1px solid var(--surface-border);
+            font-weight: 600;
+            font-size: 0.9rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .log-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            font-family: var(--font-mono);
+            font-size: 0.8rem;
+        }
+
+        .packet-row {
+            padding: 6px 10px;
+            border-radius: 4px;
+            display: grid;
+            grid-template-columns: 80px 60px 180px 180px 1fr;
+            gap: 8px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+            align-items: center;
+        }
+        .packet-row:hover { background: rgba(255, 255, 255, 0.02); }
+
+        .alert-entry {
+            background: rgba(239, 68, 68, 0.08);
+            border-left: 3px solid var(--danger);
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            border-radius: 0 4px 4px 0;
+        }
+        .alert-header { display: flex; justify-content: space-between; margin-bottom: 4px; }
+        .alert-sig { font-weight: 600; color: #fca5a5; }
+        .alert-desc { font-size: 0.75rem; color: var(--text-muted); margin-top: 2px; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="title-group">
+            <h1>Tactical NIDS Telemetry Hub</h1>
+            <span class="badge">TACTICAL-CEMA-v1.0</span>
+        </div>
+        <div class="controls">
+            <button id="btn-stream" onclick="toggleStream()">Start Synthetic Capture</button>
+            <button class="secondary" onclick="injectAttack()">Inject Attack Scenario</button>
+            <button class="secondary" onclick="clearLogs()">Reset Logs</button>
+        </div>
+    </header>
+
+    <div class="dashboard-grid">
+        <div class="metric-card">
+            <div class="metric-label">Packets Processed</div>
+            <div class="metric-value" id="count-pkts">0</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Threat Alerts</div>
+            <div class="metric-value" id="count-alerts" style="color: var(--danger);">0</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Signatures Monitored</div>
+            <div class="metric-value" style="color: var(--accent-glow);">4</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">Heuristic Detection</div>
+            <div class="metric-value" style="color: var(--success);">ACTIVE</div>
+        </div>
+    </div>
+
+    <div class="panels-grid">
+        <div class="panel">
+            <div class="panel-header">
+                <span>Real-Time Dissected Packet Stream</span>
+                <span style="font-size: 0.75rem; color: var(--text-muted);">L2/L3/L4 Parsing</span>
+            </div>
+            <div class="log-container" id="packet-stream"></div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <span>Intrusion Alerts & Anomalies</span>
+                <span style="font-size: 0.75rem; color: var(--danger);">JSON Telemetry</span>
+            </div>
+            <div class="log-container" id="alert-feed"></div>
+        </div>
+    </div>
+
+    <script>
+        let isStreaming = false;
+        let streamInterval = null;
+        let packetCount = 0;
+        let alertCount = 0;
+        const scanTrackers = {};
+
+        const SIGNATURES = [
+            { id: "SIG-001", name: "Command Injection Attempt", pattern: "/bin/sh", severity: "CRITICAL" },
+            { id: "SIG-002", name: "Directory Traversal Sequence", pattern: "../../etc/passwd", severity: "HIGH" },
+            { id: "SIG-003", name: "Tactical Telemetry C2 Beacon", pattern: "BEACON_HEARTBEAT_ACK_V1", severity: "CRITICAL" },
+            { id: "SIG-004", name: "Shellcode NOP Sled", pattern: "90909090", severity: "HIGH" }
+        ];
+
+        function toggleStream() {
+            const btn = document.getElementById("btn-stream");
+            isStreaming = !isStreaming;
+            if (isStreaming) {
+                btn.textContent = "Halt Capture";
+                btn.style.background = "var(--danger)";
+                streamInterval = setInterval(generateRandomPacket, 600);
+            } else {
+                btn.textContent = "Start Synthetic Capture";
+                btn.style.background = "var(--accent)";
+                clearInterval(streamInterval);
+            }
+        }
+
+        function generateRandomPacket() {
+            const benignPayloads = ["GET /index.html", "DNS_QUERY_A_ROOT", "STATUS_OK", "ACK_FRAME_01"];
+            const protocols = ["TCP", "UDP"];
+            const proto = protocols[Math.floor(Math.random() * protocols.length)];
+            const srcPort = Math.floor(Math.random() * 20000) + 30000;
+            const dstPort = [80, 443, 53, 22][Math.floor(Math.random() * 4)];
+            const payload = benignPayloads[Math.floor(Math.random() * benignPayloads.length)];
+
+            processPacket({
+                timestamp: new Date().toISOString().substring(11, 19),
+                proto: proto,
+                src: "192.168.1." + Math.floor(Math.random() * 100 + 10),
+                dst: "10.0.0.1",
+                sport: srcPort,
+                dport: dstPort,
+                flags: proto === "TCP" ? "SYN+ACK" : "-",
+                payload: payload
+            });
+        }
+
+        function injectAttack() {
+            const attacks = [
+                { proto: "TCP", dport: 8080, payload: "POST /exec HTTP/1.1; /bin/sh" },
+                { proto: "TCP", dport: 80, payload: "GET /doc?file=../../etc/passwd HTTP/1.1" },
+                { proto: "UDP", dport: 4000, payload: "BEACON_HEARTBEAT_ACK_V1" }
+            ];
+            const attack = attacks[Math.floor(Math.random() * attacks.length)];
+            processPacket({
+                timestamp: new Date().toISOString().substring(11, 19),
+                proto: attack.proto,
+                src: "192.168.10.45",
+                dst: "10.0.0.1",
+                sport: 49152,
+                dport: attack.dport,
+                flags: "PSH+ACK",
+                payload: attack.payload
+            });
+        }
+
+        function processPacket(pkt) {
+            packetCount++;
+            document.getElementById("count-pkts").textContent = packetCount;
+
+            // Render Packet
+            const stream = document.getElementById("packet-stream");
+            const row = document.createElement("div");
+            row.className = "packet-row";
+            row.innerHTML = `
+                <span style="color: var(--text-muted);">${pkt.timestamp}</span>
+                <span style="color: ${pkt.proto === 'TCP' ? 'var(--accent-glow)' : 'var(--warning)'}; font-weight: 600;">${pkt.proto}</span>
+                <span>${pkt.src}:${pkt.sport}</span>
+                <span>${pkt.dst}:${pkt.dport}</span>
+                <span style="color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${pkt.payload}</span>
+            `;
+            stream.insertBefore(row, stream.firstChild);
+
+            // Signature Evaluation
+            SIGNATURES.forEach(sig => {
+                if (pkt.payload.includes(sig.pattern)) {
+                    triggerAlert(sig.name, `Signature matched: [${sig.id}] in application payload`, sig.severity, pkt);
+                }
+            });
+        }
+
+        function triggerAlert(title, desc, severity, pkt) {
+            alertCount++;
+            document.getElementById("count-alerts").textContent = alertCount;
+            const alertFeed = document.getElementById("alert-feed");
+            const entry = document.createElement("div");
+            entry.className = "alert-entry";
+            entry.innerHTML = `
+                <div class="alert-header">
+                    <span class="alert-sig">[${severity}] ${title}</span>
+                    <span style="font-size: 0.7rem; color: var(--text-muted);">${pkt.timestamp}</span>
+                </div>
+                <div class="alert-desc">${desc}</div>
+                <div style="font-size: 0.7rem; margin-top: 4px; color: var(--accent-glow);">
+                    Source: ${pkt.src}:${pkt.sport} ➔ Target: ${pkt.dst}:${pkt.dport}
+                </div>
+            `;
+            alertFeed.insertBefore(entry, alertFeed.firstChild);
+        }
+
+        function clearLogs() {
+            document.getElementById("packet-stream").innerHTML = "";
+            document.getElementById("alert-feed").innerHTML = "";
+            packetCount = 0;
+            alertCount = 0;
+            document.getElementById("count-pkts").textContent = "0";
+            document.getElementById("count-alerts").textContent = "0";
+        }
+    </script>
+</body>
+</html>
